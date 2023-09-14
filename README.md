@@ -35,6 +35,22 @@ add_executable(MyTarget main.cpp)
 target_link_libraries(MyTarget PUBLIC yolov7_cxx)
 ```
 
+# Minimal Example
+A simple code is provided below to showcase the interface of the library. Also, the API of the interface is commented, and more details can be found there.
+
+``` c++
+#include <yolov7_cxx/yolov7_cxx.h>
+
+int main()
+{
+    YOLOv7_CXX::YOLOv7 yolo(model_path, cuda_device);
+    int image_size = yolo.image_size();
+    float *data = /* pointer to continuous NCHW images data */;
+    YOLOv7_CXX::Shape shape = {1, 3, image_size, image_size};
+    auto results = yolo.detect(data, shape);
+}
+```
+
 # Contributing
 You can report bugs, ask questions, and request features on [issues page](../../issues).
 
