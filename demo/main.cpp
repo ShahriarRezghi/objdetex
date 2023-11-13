@@ -27,10 +27,11 @@
 /// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 /// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <argp.h>
 #include <yolov7_cxx/yolov7_cxx.h>
 
 #include <cassert>
+#include <ranges>
+#include <algorithm>
 #include <iostream>
 #include <opencv2/opencv.hpp>
 #include <stdexcept>
@@ -61,7 +62,7 @@ void display_image(cv::Mat image, const std::vector<YOLOv7_CXX::Result> &detecti
     cv::imshow("YOLOv7 Output", image);
 }
 
-int main(int argc, char *argv[])
+void start(int argc, char* argv[])
 {
     int64_t cuda_device = -1;
     std::string model_path;
@@ -102,7 +103,7 @@ int main(int argc, char *argv[])
             if (frame.empty()) break;
             assert(frame.channels() == 3);
 
-            cv::resize(frame, frame, {image_size, image_size});
+            cv::resize(frame, frame, { image_size, image_size });
             auto [array, shape] = convert_image(frame);
             auto detections = yolo.detect(array.data(), shape);
             display_image(frame, detections[0]);
@@ -113,7 +114,7 @@ int main(int argc, char *argv[])
     {
         auto image = cv::imread(image_path);
         assert(!image.empty() && image.channels() == 3);
-        cv::resize(image, image, {image_size, image_size});
+        cv::resize(image, image, { image_size, image_size });
 
         auto [array, shape] = convert_image(image);
         auto detections = yolo.detect(array.data(), shape);
@@ -122,6 +123,17 @@ int main(int argc, char *argv[])
     }
     else
         throw std::runtime_error("No input source is provided!");
+}
 
+int main(int argc, char *argv[])
+{
+    // Visual Studio debugger won't show exception message on unhandled exception
+    try {
+        start(argc, argv);
+    } catch (std::exception& ex) {
+        std::cout << "Exception: " << "\n"
+            << ex.what() << '\n';
+        throw;
+    }
     return 0;
 }

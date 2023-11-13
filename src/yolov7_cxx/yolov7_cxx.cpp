@@ -31,6 +31,9 @@
 
 #include <onnxruntime_cxx_api.h>
 
+#include <locale>
+#include <codecvt>
+#include <string>
 #include <memory>
 
 namespace YOLOv7_CXX
@@ -49,6 +52,13 @@ const char *class_names[] = {
     "toaster",        "sink",       "refrigerator",  "book",          "clock",        "vase",          "scissors",
     "teddy bear",     "hair drier", "toothbrush"};
 
+
+#ifdef _WIN32   // ORTCHAR_T is wchar_t when _WIN32 is defined.
+#define TO_ONNX_STR(stdStr) std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>>().from_bytes(stdStr).c_str()
+#else
+#define TO_ONNX_STR(stdStr) stdStr.c_str()
+#endif
+
 Ort::SessionOptions create_options(int64_t cuda_device)
 {
     Ort::SessionOptions options;
@@ -65,7 +75,7 @@ struct Impl
     Impl(const std::string &model_path, int64_t cuda_device)
         : env(ORT_LOGGING_LEVEL_WARNING, "YOLOv7_CXX"),
           options(create_options(cuda_device)),
-          session(env, model_path.c_str(), options)
+          session(env, TO_ONNX_STR(model_path), options)
     {
     }
 };
@@ -116,7 +126,6 @@ std::vector<Results> YOLOv7::detect(float *data, Shape shape)
             d.index = ptr[5];
             d.name = class_names[d.index];
             d.confidence = ptr[6];
-            temp.push_back(d);
             ptr += shape[1];
         }
     }
