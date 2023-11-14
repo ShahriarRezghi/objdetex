@@ -40,11 +40,18 @@ endif()
 set(ONNX_RUNTIME_PATH "/opt/onnxruntime" CACHE STRING "ONNX Runtime directory path")
 
 add_library(onnxruntime SHARED IMPORTED)
-set_target_properties(onnxruntime PROPERTIES
-    IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/onnxruntime.dll"
-    IMPORTED_IMPLIB   "${ONNX_RUNTIME_PATH}/lib/onnxruntime.lib"
-    INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include"
-)
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/onnxruntime.dll"
+        IMPORTED_IMPLIB   "${ONNX_RUNTIME_PATH}/lib/onnxruntime.lib"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include"
+    )
+else()
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}onnxruntime${CMAKE_SHARED_LIBRARY_SUFFIX}"
+        INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include"
+    )
+endif()
 
 set(CUDA_LIBRARIES_PATH "/opt/cuda11" CACHE STRING "CUDA libraries path compatible with the ONNX Runtime")
 
