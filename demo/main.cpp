@@ -27,7 +27,6 @@
 /// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 /// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <argp.h>
 #include <yolov7_cxx/yolov7_cxx.h>
 
 #include <cassert>
@@ -61,7 +60,7 @@ void display_image(cv::Mat image, const std::vector<YOLOv7_CXX::Result> &detecti
     cv::imshow("YOLOv7 Output", image);
 }
 
-int main(int argc, char *argv[])
+void start(int argc, char *argv[])
 {
     int64_t cuda_device = -1;
     std::string model_path;
@@ -122,6 +121,21 @@ int main(int argc, char *argv[])
     }
     else
         throw std::runtime_error("No input source is provided!");
+}
 
+int main(int argc, char *argv[])
+{
+    // Visual Studio debugger won't show exception message on unhandled exception
+    try
+    {
+        start(argc, argv);
+    }
+    catch (std::exception &ex)
+    {
+        std::cout << "Exception: "
+                  << "\n"
+                  << ex.what() << '\n';
+        throw;
+    }
     return 0;
 }
