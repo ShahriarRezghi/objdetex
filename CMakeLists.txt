@@ -73,11 +73,10 @@ if(YOLOV7_CXX_MASTER)
         "${OpenCV_INCLUDE_DIRS}")
     target_link_libraries(yolov7_demo PRIVATE
         ${OpenCV_LIBS} yolov7_cxx)
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_custom_command(TARGET yolov7_demo POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:yolov7_demo> $<TARGET_FILE_DIR:yolov7_demo>
-        COMMAND_EXPAND_LISTS
-    )
+	if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+		add_custom_command(TARGET yolov7_demo POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:yolov7_demo> $<TARGET_FILE_DIR:yolov7_demo>
+			COMMAND_EXPAND_LISTS
+		)
+	endif()
 endif()
