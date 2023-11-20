@@ -38,23 +38,49 @@ if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
 endif()
 
 set(ONNX_RUNTIME_PATH "/opt/onnxruntime" CACHE STRING "ONNX Runtime directory path")
-
-add_library(onnxruntime SHARED IMPORTED)
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    set_target_properties(onnxruntime PROPERTIES
-        IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/onnxruntime.dll"
-        IMPORTED_IMPLIB   "${ONNX_RUNTIME_PATH}/lib/onnxruntime.lib"
-        INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include"
-    )
-else()
-    set_target_properties(onnxruntime PROPERTIES
-        IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}onnxruntime${CMAKE_SHARED_LIBRARY_SUFFIX}"
-        INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include"
-    )
-endif()
-
 set(CUDA_LIBRARIES_PATH "/opt/cuda11" CACHE STRING "CUDA libraries path compatible with the ONNX Runtime")
 
+# Create Onnxruntime imported target
+add_library(onnxruntime SHARED IMPORTED)
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+	set(ONNX_IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/onnxruntime.dll")
+	set(ONNX_IMPORTED_IMPLIB "${ONNX_RUNTIME_PATH}/lib/onnxruntime.lib")
+	set(ONNX_INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include")
+	if(NOT EXISTS ${ONNX_IMPORTED_LOCATION})
+		message(FATAL_ERROR "Excepted Onnxruntime library '${ONNX_IMPORTED_LOCATION}' does not exist. Please specify a valid ONNX_RUNTIME_PATH.(current: ${ONNX_RUNTIME_PATH})")
+	endif()
+	if(NOT EXISTS ${ONNX_IMPORTED_IMPLIB})
+		message(FATAL_ERROR "Excepted Onnxruntime imported library '${ONNX_IMPORTED_IMPLIB}' does not exist. Please specify a valid ONNX_RUNTIME_PATH.(current: ${ONNX_RUNTIME_PATH})")
+	endif()
+	if(NOT EXISTS ${ONNX_INTERFACE_INCLUDE_DIRECTORIES})
+		message(FATAL_ERROR "Excepted Onnxruntime include directory '${ONNX_INTERFACE_INCLUDE_DIRECTORIES}' does not exist. Please specify a valid ONNX_RUNTIME_PATH.(current: ${ONNX_RUNTIME_PATH})")
+	endif()
+	
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION ${ONNX_IMPORTED_LOCATION}
+        IMPORTED_IMPLIB   ${ONNX_IMPORTED_IMPLIB}
+        INTERFACE_INCLUDE_DIRECTORIES ${ONNX_INTERFACE_INCLUDE_DIRECTORIES}
+    )
+elseif(UNIX)
+	set(ONNX_IMPORTED_LOCATION "${ONNX_RUNTIME_PATH}/lib/${CMAKE_SHARED_LIBRARY_PREFIX}onnxruntime${CMAKE_SHARED_LIBRARY_SUFFIX}")
+	set(ONNX_INTERFACE_INCLUDE_DIRECTORIES "${ONNX_RUNTIME_PATH}/include")
+	if(NOT EXISTS ${ONNX_IMPORTED_LOCATION})
+		message(FATAL_ERROR "Excepted Onnxruntime library '${ONNX_IMPORTED_LOCATION}' does not exist. Please specify a valid ONNX_RUNTIME_PATH.(current: ${ONNX_RUNTIME_PATH})")
+	endif()
+	if(NOT EXISTS ${ONNX_INTERFACE_INCLUDE_DIRECTORIES})
+		message(FATAL_ERROR "Excepted Onnxruntime include directory '${ONNX_INTERFACE_INCLUDE_DIRECTORIES}' does not exist. Please specify a valid ONNX_RUNTIME_PATH.(current: ${ONNX_RUNTIME_PATH})")
+	endif()
+	
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION ${ONNX_IMPORTED_LOCATION}
+        INTERFACE_INCLUDE_DIRECTORIES ${ONNX_INTERFACE_INCLUDE_DIRECTORIES}
+    )
+else()
+	message(FATAL_ERROR "Unsupported target platform.")
+endif()
+
+
+# Add yolov7_cxx library
 file(GLOB SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/yolov7_cxx/*")
 add_library(yolov7_cxx ${SOURCES})
@@ -65,19 +91,18 @@ target_link_directories(yolov7_cxx PUBLIC
 target_link_libraries(yolov7_cxx PRIVATE
     onnxruntime)
 
+# Add example executable
 if(YOLOV7_CXX_MASTER)
     find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs highgui dnn)
-
     add_executable(yolov7_demo demo/main.cpp)
     target_include_directories(yolov7_demo PRIVATE
         "${OpenCV_INCLUDE_DIRS}")
     target_link_libraries(yolov7_demo PRIVATE
         ${OpenCV_LIBS} yolov7_cxx)
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_custom_command(TARGET yolov7_demo POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:yolov7_demo> $<TARGET_FILE_DIR:yolov7_demo>
-        COMMAND_EXPAND_LISTS
-    )
+    if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+        add_custom_command(TARGET yolov7_demo POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:yolov7_demo> $<TARGET_FILE_DIR:yolov7_demo>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
 endif()
