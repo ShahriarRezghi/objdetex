@@ -1,6 +1,6 @@
 # BSD 3-Clause License
 #
-# Copyright (c) 2023, Shahriar Rezghi <shahriar.rezghi.sh@gmail.com>
+# Copyright (c) 2023-2024, Shahriar Rezghi <shahriar.rezghi.sh@gmail.com>
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions are met:
@@ -28,13 +28,13 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cmake_minimum_required(VERSION 3.5)
-project(YOLOV7_CXX LANGUAGES CXX)
+project(OBJDETEX LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(YOLOV7_CXX_MASTER OFF CACHE INTERNAL "")
+set(OBJDETEX_MASTER OFF CACHE INTERNAL "")
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
-    set(YOLOV7_CXX_MASTER ON CACHE INTERNAL "")
+    set(OBJDETEX_MASTER ON CACHE INTERNAL "")
 endif()
 
 set(ONNX_RUNTIME_PATH "/opt/onnxruntime" CACHE STRING "ONNX Runtime directory path")
@@ -80,28 +80,28 @@ else()
 endif()
 
 
-# Add yolov7_cxx library
+# Add objdetex library
 file(GLOB SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/yolov7_cxx/*")
-add_library(yolov7_cxx ${SOURCES})
-target_include_directories(yolov7_cxx PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/objdetex/*")
+add_library(objdetex ${SOURCES})
+target_include_directories(objdetex PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/")
-target_link_directories(yolov7_cxx PUBLIC
+target_link_directories(objdetex PUBLIC
     "${CUDA_LIBRARIES_PATH}/lib64")
-target_link_libraries(yolov7_cxx PRIVATE
+target_link_libraries(objdetex PRIVATE
     onnxruntime)
 
 # Add example executable
-if(YOLOV7_CXX_MASTER)
+if(OBJDETEX_MASTER)
     find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs highgui dnn)
-    add_executable(yolov7_demo demo/main.cpp)
-    target_include_directories(yolov7_demo PRIVATE
+    add_executable(objdetex_demo demo/main.cpp)
+    target_include_directories(objdetex_demo PRIVATE
         "${OpenCV_INCLUDE_DIRS}")
-    target_link_libraries(yolov7_demo PRIVATE
-        ${OpenCV_LIBS} yolov7_cxx)
+    target_link_libraries(objdetex_demo PRIVATE
+        ${OpenCV_LIBS} objdetex)
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        add_custom_command(TARGET yolov7_demo POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:yolov7_demo> $<TARGET_FILE_DIR:yolov7_demo>
+        add_custom_command(TARGET objdetex_demo POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:objdetex_demo> $<TARGET_FILE_DIR:objdetex_demo>
             COMMAND_EXPAND_LISTS
         )
     endif()

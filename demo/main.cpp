@@ -1,6 +1,6 @@
 /// BSD 3-Clause License
 ///
-/// Copyright (c) 2023, Shahriar Rezghi <shahriar.rezghi.sh@gmail.com>
+/// Copyright (c) 2023-2024, Shahriar Rezghi <shahriar.rezghi.sh@gmail.com>
 ///
 /// Redistribution and use in source and binary forms, with or without
 /// modification, are permitted provided that the following conditions are met:
@@ -27,7 +27,7 @@
 /// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 /// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <yolov7_cxx/yolov7_cxx.h>
+#include <objdetex/objdetex.h>
 
 #include <cassert>
 #include <iostream>
@@ -35,7 +35,8 @@
 #include <stdexcept>
 
 using Array = std::vector<float>;
-using Shape = YOLOv7_CXX::Shape;
+using Shape = ObjDetEx::Shape;
+using Tensor = ObjDetEx::Tensor;
 
 std::pair<Array, Shape> convert_image(const cv::Mat &image)
 {
@@ -45,19 +46,20 @@ std::pair<Array, Shape> convert_image(const cv::Mat &image)
     return {array, shape};
 }
 
-void display_image(cv::Mat image, const std::vector<YOLOv7_CXX::Result> &detections)
+void display_image(cv::Mat image, const std::vector<ObjDetEx::Detection> &detections)
 {
     auto w = image.cols, h = image.rows;
 
     for (const auto &d : detections)
     {
+        std::cout << d << std::endl;
         auto color = CV_RGB(255, 255, 255);  // CV_RGB(rand() % 256, rand() % 256, rand() % 256)
         auto name = d.name + ":" + std::to_string(int(d.confidence * 100)) + "%";
         cv::rectangle(image, cv::Rect(d.x * w, d.y * h, d.w * w, d.h * h), color);
         cv::putText(image, name, cv::Point(d.x * w, d.y * h), cv::FONT_HERSHEY_DUPLEX, 1, color);
     }
 
-    cv::imshow("YOLOv7 Output", image);
+    cv::imshow("ObjDetEx Output", image);
 }
 
 void start(int argc, char *argv[])
@@ -86,8 +88,8 @@ void start(int argc, char *argv[])
     if (it != args.end() && std::next(it) != args.end()) image_path = *std::next(it);
 
     if (model_path.empty()) throw std::runtime_error("Model path can't be empty!");
-    YOLOv7_CXX::YOLOv7 yolo(model_path, cuda_device);
-    int image_size = yolo.image_size();
+    ObjDetEx::YOLOv8 yolo(model_path, cuda_device);
+    int image_size = yolo.imageSize();
 
     if (!video_source.empty())
     {
@@ -101,9 +103,10 @@ void start(int argc, char *argv[])
             if (frame.empty()) break;
             assert(frame.channels() == 3);
 
+            int64_t oldshape[2] = {frame.cols, frame.rows};
             cv::resize(frame, frame, {image_size, image_size});
             auto [array, shape] = convert_image(frame);
-            auto detections = yolo.detect(array.data(), shape);
+            auto detections = yolo(Tensor(array.data(), shape));  // , Tensor(oldshape, {2})
             display_image(frame, detections[0]);
             if (cv::waitKey(1) >= 0) break;
         }
@@ -112,10 +115,11 @@ void start(int argc, char *argv[])
     {
         auto image = cv::imread(image_path);
         assert(!image.empty() && image.channels() == 3);
+        int64_t oldshape[2] = {image.cols, image.rows};
         cv::resize(image, image, {image_size, image_size});
 
         auto [array, shape] = convert_image(image);
-        auto detections = yolo.detect(array.data(), shape);
+        auto detections = yolo(Tensor(array.data(), shape));  // , Tensor(oldshape, {2})
         display_image(image, detections[0]);
         cv::waitKey(0);
     }
