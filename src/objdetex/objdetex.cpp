@@ -34,24 +34,35 @@
 #include <cmath>
 #include <codecvt>
 #include <locale>
+#include <sstream>
+
+#define OBJDETEX_ASSERT(expr, msg)                                            \
+    if (!static_cast<bool>(expr))                                             \
+    {                                                                         \
+        std::ostringstream stream;                                            \
+        std::string file = __FILE__, func = __PRETTY_FUNCTION__;              \
+        stream << "Assertion at " << file << ":" << __LINE__ << "->" << func; \
+        stream << ":\n\t" << msg << std::endl;                                \
+        throw Exception(stream.str());                                        \
+    }
 
 namespace ObjDetEx
 {
 using Sequence = const char *;
 
-const char *class_names[] = {
-    "person",         "bicycle",    "car",           "motorcycle",    "airplane",     "bus",           "train",
-    "truck",          "boat",       "traffic light", "fire hydrant",  "stop sign",    "parking meter", "bench",
-    "bird",           "cat",        "dog",           "horse",         "sheep",        "cow",           "elephant",
-    "bear",           "zebra",      "giraffe",       "backpack",      "umbrella",     "handbag",       "tie",
-    "suitcase",       "frisbee",    "skis",          "snowboard",     "sports ball",  "kite",          "baseball bat",
-    "baseball glove", "skateboard", "surfboard",     "tennis racket", "bottle",       "wine glass",    "cup",
-    "fork",           "knife",      "spoon",         "bowl",          "banana",       "apple",         "sandwich",
-    "orange",         "broccoli",   "carrot",        "hot dog",       "pizza",        "donut",         "cake",
-    "chair",          "couch",      "potted plant",  "bed",           "dining table", "toilet",        "tv",
-    "laptop",         "mouse",      "remote",        "keyboard",      "cell phone",   "microwave",     "oven",
-    "toaster",        "sink",       "refrigerator",  "book",          "clock",        "vase",          "scissors",
-    "teddy bear",     "hair drier", "toothbrush"};
+const char *classNames[] = {
+    "<unknown>",    "person",         "bicycle",    "car",           "motorcycle",    "airplane",     "bus",
+    "train",        "truck",          "boat",       "traffic light", "fire hydrant",  "stop sign",    "parking meter",
+    "bench",        "bird",           "cat",        "dog",           "horse",         "sheep",        "cow",
+    "elephant",     "bear",           "zebra",      "giraffe",       "backpack",      "umbrella",     "handbag",
+    "tie",          "suitcase",       "frisbee",    "skis",          "snowboard",     "sports ball",  "kite",
+    "baseball bat", "baseball glove", "skateboard", "surfboard",     "tennis racket", "bottle",       "wine glass",
+    "cup",          "fork",           "knife",      "spoon",         "bowl",          "banana",       "apple",
+    "sandwich",     "orange",         "broccoli",   "carrot",        "hot dog",       "pizza",        "donut",
+    "cake",         "chair",          "couch",      "potted plant",  "bed",           "dining table", "toilet",
+    "tv",           "laptop",         "mouse",      "remote",        "keyboard",      "cell phone",   "microwave",
+    "oven",         "toaster",        "sink",       "refrigerator",  "book",          "clock",        "vase",
+    "scissors",     "teddy bear",     "hair drier", "toothbrush"};
 
 #ifdef _WIN32  // ORTCHAR_T is wchar_t when _WIN32 is defined.
 #define TO_ONNX_STR(stdStr) std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>>().from_bytes(stdStr).c_str()
@@ -59,7 +70,7 @@ const char *class_names[] = {
 #define TO_ONNX_STR(stdStr) stdStr.c_str()
 #endif
 
-Ort::SessionOptions create_options(int64_t cuda_device)
+Ort::SessionOptions createOptions(int64_t cuda_device)
 {
     Ort::SessionOptions options;
     if (cuda_device >= 0) Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(options, cuda_device));
@@ -73,11 +84,18 @@ int64_t elements(const std::vector<int64_t> &shape)
     return target;
 }
 
-void transpose_matrix(const float *input, float *output, int64_t x, int64_t y)
+void transposeMatrix(const float *input, float *output, int64_t x, int64_t y)
 {
     for (int64_t i = 0; i < x; ++i)
         for (int64_t j = 0; j < y; ++j)  //
             output[j * x + i] = input[i * y + j];
+}
+
+std::pair<Size, String> getClass(float index)
+{
+    Size idx = std::nearbyint(index);
+    idx = (std::max<Size>)(-1, (std::min<Size>)(idx, 79));
+    return {idx, classNames[idx + 1]};
 }
 
 Tensor::Tensor(float *data, const Shape &shape) : Tensor(data, shape, [](float *) {}) {}
@@ -116,7 +134,7 @@ struct Impl
 
     Impl(const String &modelPath, int64_t cudaDevice)
         : env(ORT_LOGGING_LEVEL_WARNING, "ObjDetEx"),
-          options(create_options(cudaDevice)),
+          options(createOptions(cudaDevice)),
           session(env, TO_ONNX_STR(modelPath), options)
     {
     }
@@ -163,19 +181,17 @@ void detectYOLOv7(const Vector<Ort::Value> &values, Vector<Detections> &detectio
 
         for (Size j = 0; j < shape[0]; ++i)
         {
-            Detection detection;
+            Detection result;
             auto ptr = output + j * shape[1];
-            detection.x = ptr[1] / width;
-            detection.y = ptr[2] / height;
-            detection.w = (ptr[3] - ptr[1]) / width;
-            detection.h = (ptr[4] - ptr[2]) / height;
-            // TODO add nearby int and clamping to index
-            detection.index = ptr[5];
-            detection.name = class_names[detection.index];
-            detection.confidence = ptr[6];
+            result.x = ptr[1] / width;
+            result.y = ptr[2] / height;
+            result.w = (ptr[3] - ptr[1]) / width;
+            result.h = (ptr[4] - ptr[2]) / height;
+            std::tie(result.index, result.name) = getClass(ptr[5]);
+            result.confidence = ptr[6];
 
-            if (detection.confidence >= threshold)  //
-                list.push_back(detection);
+            if (result.confidence >= threshold)  //
+                list.push_back(result);
         }
     }
 }
@@ -191,7 +207,7 @@ void detectYOLOv8(const Vector<Ort::Value> &values, Vector<Detections> &detectio
     std::vector<float> transposed(maximum * features);
     for (Size i = 0; i < batch; ++i)
     {
-        transpose_matrix(output + i * features * maximum, transposed.data(), features, maximum);
+        transposeMatrix(output + i * features * maximum, transposed.data(), features, maximum);
         std::unordered_map<Size, Detection> detmap;
         auto currentOutput = transposed.data();
 
@@ -208,8 +224,7 @@ void detectYOLOv8(const Vector<Ort::Value> &values, Vector<Detections> &detectio
             result.y = (ptr[1] - ptr[3] / 2) / height;
             result.w = ptr[2] / width;
             result.h = ptr[3] / height;
-            result.index = index;
-            result.name = class_names[result.index];
+            std::tie(result.index, result.name) = getClass(index);
             result.confidence = confidence;
 
             auto it2 = detmap.find(result.index);
@@ -247,8 +262,7 @@ void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detecti
             result.y = ptr[1] / height;
             result.w = (ptr[2] - ptr[0]) / width;
             result.h = (ptr[3] - ptr[1]) / height;
-            result.index = ptr[5];
-            result.name = class_names[result.index];
+            std::tie(result.index, result.name) = getClass(ptr[5]);
             result.confidence = ptr[4];
             current.push_back(result);
         }
@@ -284,19 +298,21 @@ void detectRTDETR(const Vector<Ort::Value> &values, Vector<Detections> &detectio
             result.y = ptr[1] / ih;
             result.w = (ptr[2] - ptr[0]) / iw;
             result.h = (ptr[3] - ptr[1]) / ih;
-            result.index = currentLabels[j];
-            result.name = class_names[result.index];
+            std::tie(result.index, result.name) = getClass(currentLabels[j]);
             result.confidence = curentScores[j];
             current.push_back(result);
         }
     }
 }
 
-Vector<Detections> Detector::operator()(Tensor images, double threshold, Tensor dimensions) const
+Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double threshold) const
 {
-    // TODO Assert on shapes and emptiness
+    OBJDETEX_ASSERT(images, "Images tensor can't be empty");
+    if (type == RT_DETR) OBJDETEX_ASSERT(dimensions, "Dimensions tensor can't be empty when running the RT-DETR model");
     if (images.shape.size() == 3) images.shape.insert(images.shape.begin(), 1);
-    if (dimensions && dimensions.shape.size() == 1) dimensions.shape.insert(dimensions.shape.begin(), 1);
+    if (dimensions.shape.size() == 1) dimensions.shape.insert(dimensions.shape.begin(), 1);
+    OBJDETEX_ASSERT(images.shape.size() == 4, "Images tensor must be 3D or 4D");
+    OBJDETEX_ASSERT(dimensions.shape.size() == 4, "Dimensions tensor must be 1D or 2D");
 
     Vector<Tensor> tensors;
     Vector<Sequence> inputs, outputs;
