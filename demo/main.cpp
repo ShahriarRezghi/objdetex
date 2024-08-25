@@ -88,7 +88,7 @@ void start(int argc, char *argv[])
     if (it != args.end() && std::next(it) != args.end()) image_path = *std::next(it);
 
     if (model_path.empty()) throw std::runtime_error("Model path can't be empty!");
-    ObjDetEx::YOLOv8 yolo(model_path, cuda_device);
+    ObjDetEx::Detector yolo(ObjDetEx::Detector::YOLOv8, model_path, cuda_device);
     int image_size = yolo.imageSize();
 
     if (!video_source.empty())

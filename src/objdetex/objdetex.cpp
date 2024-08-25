@@ -80,13 +80,41 @@ void transpose_matrix(const float *input, float *output, int64_t x, int64_t y)
             output[j * x + i] = input[i * y + j];
 }
 
-struct Detector
+Tensor::Tensor(float *data, const Shape &shape) : Tensor(data, shape, [](float *) {}) {}
+
+Tensor::Tensor(int64_t *data, const Shape &shape) : Tensor(data, shape, [](int64_t *) {}) {}
+
+Tensor::Tensor(float *data, const Shape &shape, Deleter<float> deleter)
+{
+    this->type = Float32;
+    this->shape = shape;
+    this->data = Pointer<float>(data, deleter);
+}
+
+Tensor::Tensor(int64_t *data, const Shape &shape, Deleter<int64_t> deleter)
+{
+    this->type = Int64;
+    this->shape = shape;
+    this->data = Pointer<int64_t>(data, deleter);
+}
+
+std::ostream &operator<<(std::ostream &os, const Detection &detection)
+{
+    os << "Detection ["                                                      //
+       << "class=" << detection.name                                         //
+       << ", confidence=" << std::round(detection.confidence * 10000) / 100  //
+       << ", bounding-box=(x=" << detection.x << ", y=" << detection.y       //
+       << ", w=" << detection.w << ", h=" << detection.h << ")]";            //
+    return os;
+}
+
+struct Impl
 {
     Ort::Env env;
     Ort::SessionOptions options;
     Ort::Session session;
 
-    Detector(const String &modelPath, int64_t cudaDevice)
+    Impl(const String &modelPath, int64_t cudaDevice)
         : env(ORT_LOGGING_LEVEL_WARNING, "ObjDetEx"),
           options(create_options(cudaDevice)),
           session(env, TO_ONNX_STR(modelPath), options)
@@ -119,70 +147,55 @@ struct Detector
     }
 };
 
-YOLOv7::YOLOv7(const String &modelPath, Size cudaDevice)
+Detector::Detector(Type type, const String &path, Size device) { impl = Pointer<Impl>(new Impl(path, device)); }
+
+Size Detector::imageSize() const { return impl->imageSize(); }
+
+void detectYOLOv7(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
+                  double width, double height, double threshold)
 {
-    impl = Pointer<Detector>(new Detector(modelPath, cudaDevice));
-}
-
-Size YOLOv7::imageSize() const { return impl->imageSize(); }
-
-Vector<Detections> YOLOv7::operator()(Tensor image)
-{
-    if (image.shape.size() == 3) image.shape.insert(image.shape.begin(), 1);
-    auto values = impl->operator()({image}, {"images"}, {"output"});
-    double iw = image.shape.at(2), ih = image.shape.at(3);
-
-    Vector<Detections> results(values.size());
-    for (size_t i = 0; i < values.size(); ++i)
+    detections.resize(values.size());
+    for (Size i = 0; i < values.size(); ++i)
     {
         auto shape = values[i].GetTensorTypeAndShapeInfo().GetShape();
-        auto ptr = values[i].GetTensorData<float>();
+        auto output = values[i].GetTensorData<float>();
+        Detections &list = detections[i];
 
-        Detections &temp = results[i];
-        temp.resize(shape[0]);
-        for (auto &d : temp)
+        for (Size j = 0; j < shape[0]; ++i)
         {
-            d.x = ptr[1] / iw;
-            d.y = ptr[2] / ih;
-            d.w = (ptr[3] - ptr[1]) / iw;
-            d.h = (ptr[4] - ptr[2]) / ih;
+            Detection detection;
+            auto ptr = output + j * shape[1];
+            detection.x = ptr[1] / width;
+            detection.y = ptr[2] / height;
+            detection.w = (ptr[3] - ptr[1]) / width;
+            detection.h = (ptr[4] - ptr[2]) / height;
             // TODO add nearby int and clamping to index
-            d.index = ptr[5];
-            d.name = class_names[d.index];
-            d.confidence = ptr[6];
-            ptr += shape[1];
+            detection.index = ptr[5];
+            detection.name = class_names[detection.index];
+            detection.confidence = ptr[6];
+
+            if (detection.confidence >= threshold)  //
+                list.push_back(detection);
         }
     }
-    return results;
 }
 
-YOLOv8::YOLOv8(const String &modelPath, Size cudaDevice)
+void detectYOLOv8(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
+                  double width, double height, double threshold)
 {
-    impl = Pointer<Detector>(new Detector(modelPath, cudaDevice));
-}
-
-Size YOLOv8::imageSize() const { return impl->imageSize(); }
-
-Vector<Detections> YOLOv8::operator()(Tensor image, float threshold)
-{
-    if (image.shape.size() == 3) image.shape.insert(image.shape.begin(), 1);
-    auto values = impl->operator()({image}, {"images"}, {"output0"});
-    double iw = image.shape.at(2), ih = image.shape.at(3);
-
     auto outputShape = values[0].GetTensorTypeAndShapeInfo().GetShape();
     int64_t batch = outputShape[0], features = outputShape[1], maximum = outputShape[2];
     auto output = values[0].GetTensorData<float>();
 
-    std::vector<Detections> results(batch);
+    detections.resize(batch);
     std::vector<float> transposed(maximum * features);
-    for (int64_t i = 0; i < batch; ++i)
+    for (Size i = 0; i < batch; ++i)
     {
         transpose_matrix(output + i * features * maximum, transposed.data(), features, maximum);
+        std::unordered_map<Size, Detection> detmap;
         auto currentOutput = transposed.data();
 
-        std::unordered_map<int64_t, Detection> detections;
-
-        for (int64_t j = 0; j < maximum; ++j)
+        for (Size j = 0; j < maximum; ++j)
         {
             auto ptr = currentOutput + j * features;
             auto it1 = std::max_element(ptr + 4, ptr + features);
@@ -191,49 +204,38 @@ Vector<Detections> YOLOv8::operator()(Tensor image, float threshold)
             if (confidence < threshold) continue;
 
             Detection result;
-            result.x = (ptr[0] - ptr[2] / 2) / iw;
-            result.y = (ptr[1] - ptr[3] / 2) / ih;
-            result.w = ptr[2] / iw;
-            result.h = ptr[3] / ih;
+            result.x = (ptr[0] - ptr[2] / 2) / width;
+            result.y = (ptr[1] - ptr[3] / 2) / height;
+            result.w = ptr[2] / width;
+            result.h = ptr[3] / height;
             result.index = index;
             result.name = class_names[result.index];
             result.confidence = confidence;
 
-            auto it2 = detections.find(result.index);
-            if (it2 == detections.end())
-                detections[result.index] = result;
+            auto it2 = detmap.find(result.index);
+            if (it2 == detmap.end())
+                detmap[result.index] = result;
             else if (it2->second.confidence < result.confidence)
                 it2->second = result;
         }
 
-        Detections &current = results[i];
-        current.reserve(detections.size());
-        for (const auto &pair : detections) current.push_back(pair.second);
+        Detections &list = detections[i];
+        list.reserve(detmap.size());
+        for (const auto &pair : detmap) list.push_back(pair.second);
     }
-    return results;
 }
 
-YOLOv10::YOLOv10(const String &modelPath, Size cudaDevice)
+void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
+                   double width, double height, double threshold)
 {
-    impl = Pointer<Detector>(new Detector(modelPath, cudaDevice));
-}
-
-Size YOLOv10::imageSize() const { return impl->imageSize(); }
-
-Vector<Detections> YOLOv10::operator()(Tensor image, double threshold)
-{
-    if (image.shape.size() == 3) image.shape.insert(image.shape.begin(), 1);
-    auto values = impl->operator()({image}, {"images"}, {"output0"});
-    double iw = image.shape.at(2), ih = image.shape.at(3);
-
     auto outputShape = values[0].GetTensorTypeAndShapeInfo().GetShape();
     int64_t batch = outputShape[0], maximum = outputShape[1], features = outputShape[2];
     auto output = values[0].GetTensorData<float>();
 
-    std::vector<Detections> results(batch);
+    detections.resize(batch);
     for (int64_t i = 0; i < batch; ++i)
     {
-        Detections &current = results[i];
+        Detections &current = detections[i];
         auto curentOutput = output + i * maximum * features;
 
         for (int64_t j = 0; j < maximum; ++j)
@@ -241,46 +243,35 @@ Vector<Detections> YOLOv10::operator()(Tensor image, double threshold)
             auto ptr = curentOutput + j * features;
             if (ptr[4] < threshold) continue;
             Detection result;
-            result.x = ptr[0] / iw;
-            result.y = ptr[1] / ih;
-            result.w = (ptr[2] - ptr[0]) / iw;
-            result.h = (ptr[3] - ptr[1]) / ih;
+            result.x = ptr[0] / width;
+            result.y = ptr[1] / height;
+            result.w = (ptr[2] - ptr[0]) / width;
+            result.h = (ptr[3] - ptr[1]) / height;
             result.index = ptr[5];
             result.name = class_names[result.index];
             result.confidence = ptr[4];
             current.push_back(result);
         }
     }
-    return results;
 }
 
-RT_DETR::RT_DETR(const String &modelPath, Size cudaDevice)
+void detectRTDETR(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
+                  int64_t *dimensions, double width, double height, double threshold)
 {
-    impl = Pointer<Detector>(new Detector(modelPath, cudaDevice));
-}
-
-Size RT_DETR::imageSize() const { return impl->imageSize(); }
-
-Vector<Detections> RT_DETR::operator()(Tensor image, Tensor dims, double threshold)
-{
-    if (image.shape.size() == 3) image.shape.insert(image.shape.begin(), 1);
-    if (dims.shape.size() == 1) dims.shape.insert(dims.shape.begin(), 1);
-    auto values = impl->operator()({image, dims}, {"images", "orig_target_sizes"}, {"labels", "boxes", "scores"});
-
     auto outputShape = values[0].GetTensorTypeAndShapeInfo().GetShape();
     int64_t batch = outputShape[0], maximum = outputShape[1];
     auto labels = values[0].GetTensorData<int64_t>();
     auto boxes = values[1].GetTensorData<float>();
     auto scores = values[2].GetTensorData<float>();
 
-    std::vector<Detections> results(batch);
+    detections.resize(batch);
     for (int64_t i = 0; i < batch; ++i)
     {
-        Detections &current = results[i];
+        Detections &current = detections[i];
         auto curentScores = scores + i * maximum;
         auto currentLabels = labels + i * maximum;
         auto currentBoxes = boxes + i * maximum * 4;
-        auto currentDims = (int64_t *)dims.data.get() + i * 2;
+        auto currentDims = dimensions + i * 2;
 
         double iw = currentDims[0], ih = currentDims[1];
 
@@ -299,34 +290,52 @@ Vector<Detections> RT_DETR::operator()(Tensor image, Tensor dims, double thresho
             current.push_back(result);
         }
     }
-    return results;
 }
 
-Tensor::Tensor(float *data, const Shape &shape) : Tensor(data, shape, [](float *) {}) {}
-
-Tensor::Tensor(int64_t *data, const Shape &shape) : Tensor(data, shape, [](int64_t *) {}) {}
-
-Tensor::Tensor(float *data, const Shape &shape, Deleter<float> deleter)
+Vector<Detections> Detector::operator()(Tensor images, double threshold, Tensor dimensions) const
 {
-    this->type = Float32;
-    this->shape = shape;
-    this->data = Pointer<float>(data, deleter);
-}
+    // TODO Assert on shapes and emptiness
+    if (images.shape.size() == 3) images.shape.insert(images.shape.begin(), 1);
+    if (dimensions && dimensions.shape.size() == 1) dimensions.shape.insert(dimensions.shape.begin(), 1);
 
-Tensor::Tensor(int64_t *data, const Shape &shape, Deleter<int64_t> deleter)
-{
-    this->type = Int64;
-    this->shape = shape;
-    this->data = Pointer<int64_t>(data, deleter);
-}
+    Vector<Tensor> tensors;
+    Vector<Sequence> inputs, outputs;
 
-std::ostream &operator<<(std::ostream &os, const Detection &detection)
-{
-    os << "Detection ["                                                      //
-       << "class=" << detection.name                                         //
-       << ", confidence=" << std::round(detection.confidence * 10000) / 100  //
-       << ", bounding-box=(x=" << detection.x << ", y=" << detection.y       //
-       << ", w=" << detection.w << ", h=" << detection.h << ")]";            //
-    return os;
+    if (type == YOLOv7)
+        tensors = {images},       //
+            inputs = {"images"},  //
+            outputs = {"output"};
+    else if (type == YOLOv8)
+        tensors = {images},       //
+            inputs = {"images"},  //
+            outputs = {"output0"};
+    else if (type == YOLOv9)
+        tensors = {images},       //
+            inputs = {"images"},  //
+            outputs = {"output0"};
+    else if (type == YOLOv10)
+        tensors = {images},       //
+            inputs = {"images"},  //
+            outputs = {"output0"};
+    else if (type == RT_DETR)
+        tensors = {images, dimensions},                //
+            inputs = {"images", "orig_target_sizes"},  //
+            outputs = {"labels", "boxes", "scores"};
+
+    auto values = (*impl)(tensors, inputs, outputs);
+
+    Vector<Detections> detections;
+    double width = images.shape.at(2), height = images.shape.at(3);
+
+    if (type == YOLOv7)
+        detectYOLOv7(values, detections, width, height, threshold);
+    else if (type == YOLOv8 || type == YOLOv9)
+        detectYOLOv8(values, detections, width, height, threshold);
+    else if (type == YOLOv10)
+        detectYOLOv10(values, detections, width, height, threshold);
+    else if (type == RT_DETR)
+        detectRTDETR(values, detections, (int64_t *)dimensions.data.get(), width, height, threshold);
+
+    return detections;
 }
 }  // namespace ObjDetEx

@@ -49,11 +49,24 @@ A simple code is provided below to showcase the interface of the library. Also, 
 
 int main()
 {
-    ObjDetEx::YOLOv7 yolo(model_path, cuda_device);
-    int image_size = yolo.image_size();
-    float *data = /* pointer to continuous NCHW images data */;
-    ObjDetEx::Shape shape = {1, 3, image_size, image_size};
-    auto results = yolo.detect(data, shape);
+    using namespace ObjDetEx;
+    Detector detector(Detector::RT_DETR, "<path/to/onnx/model>");
+
+    Size batchSize = 1;
+    double detectionThreshold = .6;
+
+    // Fill this with batchSizex3x640x640 image data
+    float *imagePtr = nullptr;
+    
+    // Fill this with batchSizex2 dimension data, not needed for YOLO models
+    // NOTE: 2 is width and height of the original images before resizing to 640x640
+    int64_t *dimensionPtr = nullptr;
+
+    auto detections = detector(Tensor(imagePtr, {batchSize, 3, 640, 640}),  //
+                               detectionThreshold, Tensor(dimensionPtr, {batchSize, 2}));
+
+    // Use the detections
+    return 0;
 }
 ```
 

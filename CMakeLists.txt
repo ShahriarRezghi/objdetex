@@ -28,7 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 cmake_minimum_required(VERSION 3.5)
-project(OBJDETEX LANGUAGES CXX)
+project(OBJDETEX VERSION 0.1.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -79,13 +79,18 @@ else()
 	message(FATAL_ERROR "Unsupported target platform.")
 endif()
 
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/objdetex/config.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/gen/objdetex/config.h")
 
 # Add objdetex library
 file(GLOB SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/objdetex/*")
 add_library(objdetex ${SOURCES})
 target_include_directories(objdetex PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/")
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/>"
+    "$<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/gen/>"
+    "$<INSTALL_INTERFACE:${CMAKE_INSTALL_PREFIX}/include/>")
 target_link_directories(objdetex PUBLIC
     "${CUDA_LIBRARIES_PATH}/lib64")
 target_link_libraries(objdetex PRIVATE

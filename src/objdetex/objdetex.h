@@ -29,6 +29,8 @@
 
 #pragma once
 
+#include <objdetex/config.h>
+
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -98,9 +100,6 @@ using Shape = Vector<Size>;
 /// List of detection results, where each detection corresponds to an object found in the input image.
 using Detections = Vector<Detection>;
 
-/// Internal structure, not to be used publicly
-struct Detector;
-
 /// @brief A wrapper class for handling tensor data used in the object detection process.
 ///
 /// This class provides a flexible way to manage tensor data, including options for custom memory management
@@ -122,13 +121,19 @@ struct Tensor
     using Deleter = std::function<void(T *)>;
 
     /// The type of the tensor data (Float32 or Int64).
-    Type type;
+    Type type{Type::Float32};
 
     /// The shape of the tensor, representing the dimensions of the data.
     Shape shape;
 
     /// A shared pointer to the tensor data.
     Pointer<void> data;
+
+    /// @brief Default constructor for the `Tensor` class.
+    ///
+    /// This constructor initializes an empty `Tensor` object with no data, type, or shape defined.
+    /// The resulting `Tensor` will evaluate to `false` in a boolean context until it is assigned valid data.
+    Tensor() = default;
 
     /// @brief Constructs a Tensor object to hold a pointer to float data without ownership.
     ///
@@ -167,136 +172,38 @@ struct Tensor
     /// @param shape The shape of the tensor.
     /// @param deleter A custom deleter function to be used for deleting the data.
     Tensor(int64_t *data, const Shape &shape, Deleter<int64_t> deleter);
+
+    /// @brief Boolean conversion operator.
+    ///
+    /// This operator allows a `Tensor` object to be evaluated in a boolean context, such as in an `if` statement.
+    /// It returns `true` if the `data` pointer is not `nullptr`, indicating that the tensor contains data.
+    ///
+    /// @return `true` if the tensor contains data, `false` otherwise.
+    inline operator bool() const { return bool(data); }
 };
 
-/// @brief A class for performing object detection using the YOLOv7 model.
-///
-/// This class provides an interface to load a YOLOv7 ONNX model and run inference on input images.
-struct YOLOv7
+/// Internal structure, not to be used publicly
+struct Impl;
+
+struct Detector
 {
-    /// @brief Constructs a YOLOv7 detector.
-    ///
-    /// This constructor initializes the YOLOv7 model by loading it from the specified path.
-    /// An optional CUDA device ID can be specified to run the model on a GPU.
-    ///
-    /// @param modelPath The file path to the ONNX model.
-    /// @param cudaDevice The CUDA device ID to use for inference (-1 for CPU).
-    YOLOv7(const String &modelPath, Size cudaDevice = -1);
+    enum Type
+    {
+        RT_DETR,
+        YOLOv10,
+        YOLOv9,
+        YOLOv8,
+        YOLOv7,
+    };
 
-    /// @brief Performs object detection on the input image.
-    ///
-    /// This operator allows the YOLOv7 object to be used as a function to detect objects in an input tensor image.
-    ///
-    /// @param image A Tensor representing the input image.
-    /// @return Vector<Detections> A vector of detection results, where each element corresponds to a detected object.
-    Vector<Detections> operator()(Tensor image);
+    Detector(Type type, const String &path, Size device = -1);
 
-    /// Gets the expected input image size for the YOLOv7 model.
-    ///
-    /// @return Size The size (width and height) of the input image expected by the model.
+    Vector<Detections> operator()(Tensor images, double threshold = .6, Tensor dimensions = {}) const;
+
     Size imageSize() const;
 
 private:
-    Pointer<Detector> impl;
-};
-
-/// @brief A class for performing object detection using the YOLOv8 model.
-///
-/// This class provides an interface to load a YOLOv8 ONNX model and run inference on input images.
-struct YOLOv8
-{
-    /// @brief Constructs a YOLOv8 detector.
-    ///
-    /// This constructor initializes the YOLOv8 model by loading it from the specified path.
-    /// An optional CUDA device ID can be specified to run the model on a GPU.
-    ///
-    /// @param modelPath The file path to the ONNX model.
-    /// @param cudaDevice The CUDA device ID to use for inference (-1 for CPU).
-    YOLOv8(const String &modelPath, Size cudaDevice = -1);
-
-    /// @brief Performs object detection on the input image.
-    ///
-    /// This operator allows the YOLOv8 object to be used as a function to detect objects in an input tensor image.
-    ///
-    /// @param image A Tensor representing the input image.
-    /// @param threshold The confidence threshold for filtering detections (default is 0.45).
-    /// @return Vector<Detections> A vector of detection results, where each element corresponds to a detected object.
-    Vector<Detections> operator()(Tensor image, float threshold = .45);
-
-    /// @brief Gets the expected input image size for the YOLOv8 model.
-    ///
-    /// @return Size The size (width and height) of the input image expected by the model.
-    Size imageSize() const;
-
-private:
-    Pointer<Detector> impl;
-};
-
-using YOLOv9 = YOLOv8;
-
-/// @brief A class for performing object detection using the YOLOv10 model.
-///
-/// This class provides an interface to load a YOLOv10 ONNX model and run inference on input images.
-struct YOLOv10
-{
-    /// @brief Constructs a YOLOv10 detector.
-    ///
-    /// This constructor initializes the YOLOv10 model by loading it from the specified path.
-    /// An optional CUDA device ID can be specified to run the model on a GPU.
-    ///
-    /// @param modelPath The file path to the ONNX model.
-    /// @param cudaDevice The CUDA device ID to use for inference (-1 for CPU).
-    YOLOv10(const String &modelPath, Size cudaDevice = -1);
-
-    /// @brief Performs object detection on the input image.
-    ///
-    /// This operator allows the YOLOv10 object to be used as a function to detect objects in an input tensor image.
-    ///
-    /// @param image A Tensor representing the input image.
-    /// @param threshold The confidence threshold for filtering detections (default is 0.6).
-    /// @return Vector<Detections> A vector of detection results, where each element corresponds to a detected object.
-    Vector<Detections> operator()(Tensor image, double threshold = .6);
-
-    /// @brief Gets the expected input image size for the YOLOv10 model.
-    ///
-    /// @return Size The size (width and height) of the input image expected by the model.
-    Size imageSize() const;
-
-private:
-    Pointer<Detector> impl;
-};
-
-/// @brief A class for performing object detection using the RT-DETR model.
-///
-/// This class provides an interface to load an RT-DETR ONNX model and run inference on input images.
-struct RT_DETR
-{
-    /// @brief Constructs an RT_DETR detector.
-    ///
-    /// This constructor initializes the RT-DETR model by loading it from the specified path.
-    /// An optional CUDA device ID can be specified to run the model on a GPU.
-    ///
-    /// @param modelPath The file path to the ONNX model.
-    /// @param cudaDevice The CUDA device ID to use for inference (-1 for CPU).
-    RT_DETR(const String &modelPath, Size cudaDevice = -1);
-
-    /// @brief Performs object detection on the input image with a specified threshold.
-    ///
-    /// This operator allows the RT_DETR object to be used as a function to detect objects in an input tensor image.
-    /// A threshold can be set to filter out detections with low confidence.
-    ///
-    /// @param image A Tensor representing the input image.
-    /// @param dims A Tensor representing the dimensions of the image.
-    /// @param threshold The confidence threshold for filtering detections (default is 0.6).
-    /// @return Vector<Detections> A vector of detection results, where each element corresponds to a detected object.
-    Vector<Detections> operator()(Tensor image, Tensor dims, double threshold = .6);
-
-    /// Gets the expected input image size for the RT-DETR model.
-    ///
-    /// @return Size The size (width and height) of the input image expected by the model.
-    Size imageSize() const;
-
-private:
-    Pointer<Detector> impl;
+    Type type;
+    Pointer<Impl> impl;
 };
 }  // namespace ObjDetEx
