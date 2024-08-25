@@ -223,11 +223,12 @@ struct Detector
     /// This enum defines the different types of object detection models that the `Detector` class can handle.
     enum Type
     {
-        RT_DETR,  ///< The RT-DETR object detection model.
-        YOLOv10,  ///< The YOLOv10 object detection model.
-        YOLOv9,   ///< The YOLOv9 object detection model.
-        YOLOv8,   ///< The YOLOv8 object detection model.
-        YOLOv7,   ///< The YOLOv7 object detection model.
+        YOLOv7,    ///< The YOLOv7 object detection model.
+        YOLOv8,    ///< The YOLOv8 object detection model.
+        YOLOv9,    ///< The YOLOv9 object detection model.
+        YOLOv10,   ///< The YOLOv10 object detection model.
+        YOLO_NAS,  ///< The YOLO-NAS object detection model.
+        RT_DETR,   ///< The RT-DETR object detection model.
     };
 
     /// @brief Constructs a `Detector` object with a specified model type.

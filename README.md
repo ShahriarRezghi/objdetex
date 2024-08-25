@@ -2,6 +2,7 @@
 This repository contains a library to use various object detection models in C++. It also contains a demo program to run the models on images or video streams (like webcams). Supported models are listed below.
 
 + [RT-DETR](https://github.com/lyuwenyu/RT-DETR)
++ [YOLO-NAS](https://github.com/Deci-AI/super-gradients/blob/master/YOLONAS.md)
 + [YOLOv10](https://github.com/THU-MIG/yolov10)
 + [YOLOv9](https://github.com/WongKinYiu/yolov9)
 + [YOLOv8](https://github.com/ultralytics/ultralytics)
@@ -63,7 +64,7 @@ int main()
     int64_t *dimensionPtr = nullptr;
 
     auto detections = detector(Tensor(imagePtr, {batchSize, 3, 640, 640}),  //
-                               detectionThreshold, Tensor(dimensionPtr, {batchSize, 2}));
+                               Tensor(dimensionPtr, {batchSize, 2}), detectionThreshold);
 
     // Use the detections
     return 0;

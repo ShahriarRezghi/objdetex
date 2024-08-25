@@ -102,6 +102,8 @@ void start(int argc, char *argv[])
         type = Type::YOLOv9;
     else if (model_type == "yolov10")
         type = Type::YOLOv10;
+    else if (model_type == "yolo-nas")
+        type = Type::YOLO_NAS;
     else if (model_type == "rt-detr")
         type = Type::RT_DETR;
     else

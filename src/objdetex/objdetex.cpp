@@ -279,11 +279,11 @@ void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detecti
     Vec3<float> value(output, shape[0], shape[1], shape[2]);
 
     detections.resize(value.z);
-    for (int64_t i = 0; i < value.z; ++i)
+    for (Size i = 0; i < value.z; ++i)
     {
         Detections &list = detections[i];
 
-        for (int64_t j = 0; j < value.y; ++j)
+        for (Size j = 0; j < value.y; ++j)
         {
             auto ptr = value[i][j];
             if (ptr[4] < threshold) continue;
@@ -299,8 +299,54 @@ void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detecti
     }
 }
 
-void detectRTDETR(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
-                  int64_t *dimensions, double width, double height, double threshold)
+void detectYOLO_NAS(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
+                    double width, double height, double threshold)
+{
+    auto shape1 = values[0].GetTensorTypeAndShapeInfo().GetShape();
+    auto output1 = values[0].GetTensorData<float>();
+    Vec3<float> boxes(output1, shape1[0], shape1[1], shape1[2]);
+
+    auto shape2 = values[1].GetTensorTypeAndShapeInfo().GetShape();
+    auto output2 = values[1].GetTensorData<float>();
+    Vec3<float> scores(output2, shape2[0], shape2[1], shape2[2]);
+
+    detections.resize(boxes.z);
+    for (Size i = 0; i < boxes.z; ++i)
+    {
+        std::unordered_map<Size, Detection> detmap;
+
+        for (Size j = 0; j < boxes.y; ++j)
+        {
+            auto ptr = boxes[i][j];
+            auto cscores = scores[i][j];
+            auto it1 = std::max_element(cscores.data, cscores.data + cscores.x);
+            auto index = std::distance(cscores.data, it1);
+            auto confidence = *it1;
+            if (confidence < threshold) continue;
+
+            Detection result;
+            result.x = ptr[0] / width;
+            result.y = ptr[1] / height;
+            result.w = (ptr[2] - ptr[0]) / width;
+            result.h = (ptr[3] - ptr[1]) / height;
+            std::tie(result.index, result.name) = getClass(index);
+            result.confidence = confidence;
+
+            auto it2 = detmap.find(result.index);
+            if (it2 == detmap.end())
+                detmap[result.index] = result;
+            else if (it2->second.confidence < result.confidence)
+                it2->second = result;
+        }
+
+        Detections &list = detections[i];
+        list.reserve(detmap.size());
+        for (const auto &pair : detmap) list.push_back(pair.second);
+    }
+}
+
+void detectRT_DETR(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
+                   int64_t *dimensions, double width, double height, double threshold)
 {
     auto shape = values[1].GetTensorTypeAndShapeInfo().GetShape();
     Vec2<int64_t> labels(values[0].GetTensorData<int64_t>(), shape[0], shape[1]);
@@ -308,13 +354,13 @@ void detectRTDETR(const Vector<Ort::Value> &values, Vector<Detections> &detectio
     Vec3<float> boxes(values[1].GetTensorData<float>(), shape[0], shape[1], shape[2]);
 
     detections.resize(labels.y);
-    for (int64_t i = 0; i < labels.y; ++i)
+    for (Size i = 0; i < labels.y; ++i)
     {
         Detections &list = detections[i];
         auto current = dimensions + i * 2;
         double width = current[0], height = current[1];
 
-        for (int64_t j = 0; j < labels.x; ++j)
+        for (Size j = 0; j < labels.x; ++j)
         {
             if (scores[i][j] < threshold) continue;
             Detection result;
@@ -350,6 +396,10 @@ Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double
         tensors = {images},       //
             inputs = {"images"},  //
             outputs = {"output0"};
+    else if (type == YOLO_NAS)
+        tensors = {images},      //
+            inputs = {"input"},  //
+            outputs = {"1135", "1127"};
     else if (type == RT_DETR)
         tensors = {images, dimensions},                //
             inputs = {"images", "orig_target_sizes"},  //
@@ -367,8 +417,10 @@ Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double
         detectYOLOv8(values, detections, width, height, threshold);
     else if (type == YOLOv10)
         detectYOLOv10(values, detections, width, height, threshold);
+    else if (type == YOLO_NAS)
+        detectYOLO_NAS(values, detections, width, height, threshold);
     else if (type == RT_DETR)
-        detectRTDETR(values, detections, (int64_t *)dimensions.data.get(), width, height, threshold);
+        detectRT_DETR(values, detections, (int64_t *)dimensions.data.get(), width, height, threshold);
     else
         OBJDETEX_ASSERT(false, "Invalid detector type given");
 
