@@ -35,6 +35,7 @@
 #include <codecvt>
 #include <locale>
 #include <sstream>
+#include <stdexcept>
 
 #define OBJDETEX_ASSERT(expr, msg)                                            \
     if (!static_cast<bool>(expr))                                             \
@@ -43,7 +44,7 @@
         std::string file = __FILE__, func = __PRETTY_FUNCTION__;              \
         stream << "Assertion at " << file << ":" << __LINE__ << "->" << func; \
         stream << ":\n\t" << msg << std::endl;                                \
-        throw Exception(stream.str());                                        \
+        throw std::runtime_error(stream.str());                               \
     }
 
 namespace ObjDetEx
@@ -165,7 +166,37 @@ struct Impl
     }
 };
 
-Detector::Detector(Type type, const String &path, Size device) { impl = Pointer<Impl>(new Impl(path, device)); }
+template <typename T>
+struct Vec1
+{
+    const T *data;
+    Size x;
+    Vec1(const T *data, Size x) : data(data), x(x) {}
+    const T &operator[](Size i) const { return data[i]; }
+};
+
+template <typename T>
+struct Vec2
+{
+    const T *data;
+    Size y, x;
+    Vec2(const T *data, Size y, Size x) : data(data), y(y), x(x) {}
+    Vec1<T> operator[](Size i) const { return Vec1<T>(data + i * x, x); }
+};
+
+template <typename T>
+struct Vec3
+{
+    const T *data;
+    Size z, y, x;
+    Vec3(const T *data, Size z, Size y, Size x) : data(data), z(z), y(y), x(x) {}
+    Vec2<T> operator[](Size i) const { return Vec2<T>(data + i * y * x, y, x); }
+};
+
+Detector::Detector(Type type, const String &path, Size device) : type(type)
+{
+    impl = Pointer<Impl>(new Impl(path, device));
+}
 
 Size Detector::imageSize() const { return impl->imageSize(); }
 
@@ -177,12 +208,13 @@ void detectYOLOv7(const Vector<Ort::Value> &values, Vector<Detections> &detectio
     {
         auto shape = values[i].GetTensorTypeAndShapeInfo().GetShape();
         auto output = values[i].GetTensorData<float>();
+        Vec2<float> value(output, shape[0], shape[1]);
         Detections &list = detections[i];
 
-        for (Size j = 0; j < shape[0]; ++i)
+        for (Size j = 0; j < value.y; ++j)
         {
             Detection result;
-            auto ptr = output + j * shape[1];
+            auto ptr = value[j];
             result.x = ptr[1] / width;
             result.y = ptr[2] / height;
             result.w = (ptr[3] - ptr[1]) / width;
@@ -190,8 +222,7 @@ void detectYOLOv7(const Vector<Ort::Value> &values, Vector<Detections> &detectio
             std::tie(result.index, result.name) = getClass(ptr[5]);
             result.confidence = ptr[6];
 
-            if (result.confidence >= threshold)  //
-                list.push_back(result);
+            if (result.confidence >= threshold) list.push_back(result);
         }
     }
 }
@@ -199,23 +230,23 @@ void detectYOLOv7(const Vector<Ort::Value> &values, Vector<Detections> &detectio
 void detectYOLOv8(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
                   double width, double height, double threshold)
 {
-    auto outputShape = values[0].GetTensorTypeAndShapeInfo().GetShape();
-    int64_t batch = outputShape[0], features = outputShape[1], maximum = outputShape[2];
+    auto shape = values[0].GetTensorTypeAndShapeInfo().GetShape();
     auto output = values[0].GetTensorData<float>();
+    Vec3<float> value(output, shape[0], shape[1], shape[2]);
+    std::vector<float> transposed(value.x * value.y);
+    Vec2<float> current(transposed.data(), value.x, value.y);
 
-    detections.resize(batch);
-    std::vector<float> transposed(maximum * features);
-    for (Size i = 0; i < batch; ++i)
+    detections.resize(value.z);
+    for (Size i = 0; i < value.z; ++i)
     {
-        transposeMatrix(output + i * features * maximum, transposed.data(), features, maximum);
         std::unordered_map<Size, Detection> detmap;
-        auto currentOutput = transposed.data();
+        transposeMatrix(value[i].data, transposed.data(), value.y, value.x);
 
-        for (Size j = 0; j < maximum; ++j)
+        for (Size j = 0; j < current.y; ++j)
         {
-            auto ptr = currentOutput + j * features;
-            auto it1 = std::max_element(ptr + 4, ptr + features);
-            auto index = std::distance(ptr + 4, it1);
+            auto ptr = current[j];
+            auto it1 = std::max_element(ptr.data + 4, ptr.data + ptr.x);
+            auto index = std::distance(ptr.data + 4, it1);
             auto confidence = *it1;
             if (confidence < threshold) continue;
 
@@ -243,19 +274,18 @@ void detectYOLOv8(const Vector<Ort::Value> &values, Vector<Detections> &detectio
 void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
                    double width, double height, double threshold)
 {
-    auto outputShape = values[0].GetTensorTypeAndShapeInfo().GetShape();
-    int64_t batch = outputShape[0], maximum = outputShape[1], features = outputShape[2];
+    auto shape = values[0].GetTensorTypeAndShapeInfo().GetShape();
     auto output = values[0].GetTensorData<float>();
+    Vec3<float> value(output, shape[0], shape[1], shape[2]);
 
-    detections.resize(batch);
-    for (int64_t i = 0; i < batch; ++i)
+    detections.resize(value.z);
+    for (int64_t i = 0; i < value.z; ++i)
     {
-        Detections &current = detections[i];
-        auto curentOutput = output + i * maximum * features;
+        Detections &list = detections[i];
 
-        for (int64_t j = 0; j < maximum; ++j)
+        for (int64_t j = 0; j < value.y; ++j)
         {
-            auto ptr = curentOutput + j * features;
+            auto ptr = value[i][j];
             if (ptr[4] < threshold) continue;
             Detection result;
             result.x = ptr[0] / width;
@@ -264,7 +294,7 @@ void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detecti
             result.h = (ptr[3] - ptr[1]) / height;
             std::tie(result.index, result.name) = getClass(ptr[5]);
             result.confidence = ptr[4];
-            current.push_back(result);
+            list.push_back(result);
         }
     }
 }
@@ -272,35 +302,30 @@ void detectYOLOv10(const Vector<Ort::Value> &values, Vector<Detections> &detecti
 void detectRTDETR(const Vector<Ort::Value> &values, Vector<Detections> &detections,  //
                   int64_t *dimensions, double width, double height, double threshold)
 {
-    auto outputShape = values[0].GetTensorTypeAndShapeInfo().GetShape();
-    int64_t batch = outputShape[0], maximum = outputShape[1];
-    auto labels = values[0].GetTensorData<int64_t>();
-    auto boxes = values[1].GetTensorData<float>();
-    auto scores = values[2].GetTensorData<float>();
+    auto shape = values[1].GetTensorTypeAndShapeInfo().GetShape();
+    Vec2<int64_t> labels(values[0].GetTensorData<int64_t>(), shape[0], shape[1]);
+    Vec2<float> scores(values[2].GetTensorData<float>(), shape[0], shape[1]);
+    Vec3<float> boxes(values[1].GetTensorData<float>(), shape[0], shape[1], shape[2]);
 
-    detections.resize(batch);
-    for (int64_t i = 0; i < batch; ++i)
+    detections.resize(labels.y);
+    for (int64_t i = 0; i < labels.y; ++i)
     {
-        Detections &current = detections[i];
-        auto curentScores = scores + i * maximum;
-        auto currentLabels = labels + i * maximum;
-        auto currentBoxes = boxes + i * maximum * 4;
-        auto currentDims = dimensions + i * 2;
+        Detections &list = detections[i];
+        auto current = dimensions + i * 2;
+        double width = current[0], height = current[1];
 
-        double iw = currentDims[0], ih = currentDims[1];
-
-        for (int64_t j = 0; j < maximum; ++j)
+        for (int64_t j = 0; j < labels.x; ++j)
         {
-            if (curentScores[j] < threshold) continue;
+            if (scores[i][j] < threshold) continue;
             Detection result;
-            auto ptr = currentBoxes + j * 4;
-            result.x = ptr[0] / iw;
-            result.y = ptr[1] / ih;
-            result.w = (ptr[2] - ptr[0]) / iw;
-            result.h = (ptr[3] - ptr[1]) / ih;
-            std::tie(result.index, result.name) = getClass(currentLabels[j]);
-            result.confidence = curentScores[j];
-            current.push_back(result);
+            auto ptr = boxes[i][j];
+            result.x = ptr[0] / width;
+            result.y = ptr[1] / height;
+            result.w = (ptr[2] - ptr[0]) / width;
+            result.h = (ptr[3] - ptr[1]) / height;
+            std::tie(result.index, result.name) = getClass(labels[i][j]);
+            result.confidence = scores[i][j];
+            list.push_back(result);
         }
     }
 }
@@ -312,7 +337,7 @@ Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double
     if (images.shape.size() == 3) images.shape.insert(images.shape.begin(), 1);
     if (dimensions.shape.size() == 1) dimensions.shape.insert(dimensions.shape.begin(), 1);
     OBJDETEX_ASSERT(images.shape.size() == 4, "Images tensor must be 3D or 4D");
-    OBJDETEX_ASSERT(dimensions.shape.size() == 4, "Dimensions tensor must be 1D or 2D");
+    if (type == RT_DETR) OBJDETEX_ASSERT(dimensions.shape.size() == 2, "Dimensions tensor must be 1D or 2D");
 
     Vector<Tensor> tensors;
     Vector<Sequence> inputs, outputs;
@@ -321,15 +346,7 @@ Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double
         tensors = {images},       //
             inputs = {"images"},  //
             outputs = {"output"};
-    else if (type == YOLOv8)
-        tensors = {images},       //
-            inputs = {"images"},  //
-            outputs = {"output0"};
-    else if (type == YOLOv9)
-        tensors = {images},       //
-            inputs = {"images"},  //
-            outputs = {"output0"};
-    else if (type == YOLOv10)
+    else if (type == YOLOv8 || type == YOLOv9 || type == YOLOv10)
         tensors = {images},       //
             inputs = {"images"},  //
             outputs = {"output0"};
@@ -337,10 +354,11 @@ Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double
         tensors = {images, dimensions},                //
             inputs = {"images", "orig_target_sizes"},  //
             outputs = {"labels", "boxes", "scores"};
-
-    auto values = (*impl)(tensors, inputs, outputs);
+    else
+        OBJDETEX_ASSERT(false, "Invalid detector type given");
 
     Vector<Detections> detections;
+    auto values = (*impl)(tensors, inputs, outputs);
     double width = images.shape.at(2), height = images.shape.at(3);
 
     if (type == YOLOv7)
@@ -351,6 +369,8 @@ Vector<Detections> Detector::operator()(Tensor images, Tensor dimensions, double
         detectYOLOv10(values, detections, width, height, threshold);
     else if (type == RT_DETR)
         detectRTDETR(values, detections, (int64_t *)dimensions.data.get(), width, height, threshold);
+    else
+        OBJDETEX_ASSERT(false, "Invalid detector type given");
 
     return detections;
 }

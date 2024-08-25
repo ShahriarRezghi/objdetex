@@ -26,12 +26,12 @@ This will give you an executable file named `objdetex_demo` that you can run to 
 
 ``` bash
 # For image detection:
-./objdetex_demo -m <path/to/model.onnx> -i <path/to/image.jpg>
+./objdetex_demo -t <model/type> -m <path/to/model.onnx> -i <path/to/image.jpg>
 # Or for video stream detection:
-./objdetex_demo -m <path/to/model.onnx> -v </path/to/video/device> --cuda 0
+./objdetex_demo -t <model/type> -m <path/to/model.onnx> -v </path/to/video/device> --cuda 0
 ```
 
-You must pass a video device like /dev/video0 when trying to detect from video stream. If you want to use the project as a library, you can add it as a `CMake` subdirectory like this:
+You must pass the `-t` option to determine the type of the model. The options are `yolov7`, `yolov8`, `yolov9`, `yolov10`, `rt-detr`. You must pass a video device like /dev/video0 when trying to detect from video stream. If you want to use the project as a library, you can add it as a `CMake` subdirectory like this:
 
 ``` cmake
 add_subdirectory(objdetex)

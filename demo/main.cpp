@@ -37,6 +37,7 @@
 using Array = std::vector<float>;
 using Shape = ObjDetEx::Shape;
 using Tensor = ObjDetEx::Tensor;
+using Type = ObjDetEx::Detector::Type;
 
 std::pair<Array, Shape> convert_image(const cv::Mat &image)
 {
@@ -65,6 +66,7 @@ void display_image(cv::Mat image, const std::vector<ObjDetEx::Detection> &detect
 void start(int argc, char *argv[])
 {
     int64_t cuda_device = -1;
+    std::string model_type;
     std::string model_path;
     std::string video_source;
     std::string image_path;
@@ -74,6 +76,10 @@ void start(int argc, char *argv[])
     auto it = std::find(args.begin(), args.end(), "--cuda");
     if (it == args.end()) it = std::find(args.begin(), args.end(), "-c");
     if (it != args.end() && std::next(it) != args.end()) cuda_device = std::stoi(*std::next(it));
+
+    it = std::find(args.begin(), args.end(), "--type");
+    if (it == args.end()) it = std::find(args.begin(), args.end(), "-t");
+    if (it != args.end() && std::next(it) != args.end()) model_type = *std::next(it);
 
     it = std::find(args.begin(), args.end(), "--model");
     if (it == args.end()) it = std::find(args.begin(), args.end(), "-m");
@@ -87,8 +93,22 @@ void start(int argc, char *argv[])
     if (it == args.end()) it = std::find(args.begin(), args.end(), "-i");
     if (it != args.end() && std::next(it) != args.end()) image_path = *std::next(it);
 
+    Type type;
+    if (model_type == "yolov7")
+        type = Type::YOLOv7;
+    else if (model_type == "yolov8")
+        type = Type::YOLOv8;
+    else if (model_type == "yolov9")
+        type = Type::YOLOv9;
+    else if (model_type == "yolov10")
+        type = Type::YOLOv10;
+    else if (model_type == "rt-detr")
+        type = Type::RT_DETR;
+    else
+        throw std::runtime_error("Invalid or empty model type!");
+
     if (model_path.empty()) throw std::runtime_error("Model path can't be empty!");
-    ObjDetEx::Detector yolo(ObjDetEx::Detector::YOLOv8, model_path, cuda_device);
+    ObjDetEx::Detector yolo(type, model_path, cuda_device);
     int image_size = yolo.imageSize();
 
     if (!video_source.empty())
@@ -106,7 +126,7 @@ void start(int argc, char *argv[])
             int64_t oldshape[2] = {frame.cols, frame.rows};
             cv::resize(frame, frame, {image_size, image_size});
             auto [array, shape] = convert_image(frame);
-            auto detections = yolo(Tensor(array.data(), shape));  // , Tensor(oldshape, {2})
+            auto detections = yolo(Tensor(array.data(), shape), Tensor(oldshape, {2}));
             display_image(frame, detections[0]);
             if (cv::waitKey(1) >= 0) break;
         }
@@ -119,7 +139,7 @@ void start(int argc, char *argv[])
         cv::resize(image, image, {image_size, image_size});
 
         auto [array, shape] = convert_image(image);
-        auto detections = yolo(Tensor(array.data(), shape));  // , Tensor(oldshape, {2})
+        auto detections = yolo(Tensor(array.data(), shape), Tensor(oldshape, {2}));
         display_image(image, detections[0]);
         cv::waitKey(0);
     }

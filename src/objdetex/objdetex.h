@@ -293,26 +293,4 @@ private:
     /// @brief Pointer to the internal implementation (`Impl`) of the `Detector`.
     Pointer<Impl> impl;
 };
-
-/// @brief A class for handling exceptions within the object detection library.
-///
-/// The `Exception` class is used to represent errors that occur within the object detection process.
-/// It provides a simple mechanism for reporting error messages.
-struct Exception : std::exception
-{
-    /// @brief The error message associated with the exception.
-    String message;
-
-    /// @brief Constructs an `Exception` with the specified error message.
-    ///
-    /// @param message The error message to associate with this exception.
-    inline Exception(const String &message) : message(message) {}
-
-    /// @brief Returns the error message associated with the exception.
-    ///
-    /// This function overrides the `what()` function from `std::exception` to return the error message.
-    ///
-    /// @return The error message as a C-string.
-    inline virtual const char *what() const throw() override { return message.c_str(); }
-};
 }  // namespace ObjDetEx
