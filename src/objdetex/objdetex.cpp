@@ -37,11 +37,17 @@
 #include <sstream>
 #include <stdexcept>
 
+#ifdef _WIN32
+#define OBJDETEX_FUNCTION __FUNCSIG__
+#else
+#define OBJDETEX_FUNCTION __PRETTY_FUNCTION__
+#endif
+
 #define OBJDETEX_ASSERT(expr, msg)                                            \
     if (!static_cast<bool>(expr))                                             \
     {                                                                         \
         std::ostringstream stream;                                            \
-        std::string file = __FILE__, func = __PRETTY_FUNCTION__;              \
+        std::string file = __FILE__, func = OBJDETEX_FUNCTION;                \
         stream << "Assertion at " << file << ":" << __LINE__ << "->" << func; \
         stream << ":\n\t" << msg << std::endl;                                \
         throw std::runtime_error(stream.str());                               \
